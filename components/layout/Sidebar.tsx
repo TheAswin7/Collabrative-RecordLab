@@ -9,7 +9,7 @@ import type { Department, Subject, Experiment } from '@/types';
 type TreeDept = Department & { subjects: (Subject & { experiments: Experiment[] })[] };
 interface Props { departments: TreeDept[]; userName: string; userEmail: string|null; }
 
-const NAV = [{ href:'/dashboard', label:'Dashboard', icon:'🏠' }, { href:'/records', label:'My Records', icon:'📝' }, { href:'/repository', label:'Repository', icon:'📁' }, { href:'/search', label:'Search', icon:'🔍' }];
+const NAV = [{ href:'/dashboard', label:'Dashboard', icon:'🏠' }, { href:'/records', label:'My Records', icon:'📝' }, { href:'/repository', label:'Repository', icon:'📁' }, { href:'/search', label:'Search', icon:'🔍' }, { href:'/labmate', label:'LabMate Editor', icon:'🧪' }];
 
 export default function Sidebar({ departments, userName, userEmail }: Props) {
   const pathname = usePathname();
