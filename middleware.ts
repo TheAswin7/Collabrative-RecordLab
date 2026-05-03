@@ -23,7 +23,7 @@ export async function middleware(request: NextRequest) {
 
   const { data: { user } } = await supabase.auth.getUser();
   const path = request.nextUrl.pathname;
-  const isAuth   = path.startsWith('/login') || path.startsWith('/register') || path.startsWith('/auth');
+  const isAuth   = path.startsWith('/login') || path.startsWith('/register') || path.startsWith('/auth') || path.startsWith('/forgot-password') || path.startsWith('/update-password');
   // /labmate uses client-side anonymous sign-in — let it load without a session
   const isPublic = path.startsWith('/labmate');
 

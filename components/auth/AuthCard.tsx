@@ -3,11 +3,14 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
+import { checkUserExists } from '@/app/actions/check-user';
 
-type AuthMode = 'signin' | 'signup';
+type AuthMode = 'signin' | 'signup' | 'forgot' | 'update';
 
 interface AuthCardProps {
   initialMode: AuthMode;
+  confirmed?: boolean;
+  linkExpired?: boolean;
 }
 
 const GOOGLE_ICON = (
@@ -208,7 +211,7 @@ function InputField({ icon, type = 'text', placeholder, value, onChange, rightEl
   );
 }
 
-export default function AuthCard({ initialMode }: AuthCardProps) {
+export default function AuthCard({ initialMode, confirmed, linkExpired }: AuthCardProps) {
   const router = useRouter();
   const supabase = createClient();
 
@@ -220,6 +223,7 @@ export default function AuthCard({ initialMode }: AuthCardProps) {
   const [loading, setLoading] = useState(false);
   const [gLoading, setGLoading] = useState(false);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
 
   useEffect(() => { setTimeout(() => setMounted(true), 50); }, []);
 
@@ -229,11 +233,14 @@ export default function AuthCard({ initialMode }: AuthCardProps) {
   function switchPage(newPage: AuthMode) {
     setMounted(false);
     setError('');
+    setSuccess('');
     setTimeout(() => {
       setPage(newPage);
       setTimeout(() => setMounted(true), 20);
     }, 300);
-    router.push(newPage === 'signin' ? '/login' : '/register');
+    router.push(newPage === 'signin' ? '/login' : 
+                newPage === 'signup' ? '/register' : 
+                newPage === 'forgot' ? '/forgot-password' : '/update-password');
   }
 
   async function handleSignIn(e: React.FormEvent) {
@@ -257,10 +264,55 @@ export default function AuthCard({ initialMode }: AuthCardProps) {
     const { error: authError } = await supabase.auth.signUp({
       email: form.email,
       password: form.password,
-      options: { data: { full_name: form.name } },
+      options: { 
+        data: { full_name: form.name },
+        emailRedirectTo: `${location.origin}/auth/callback`
+      },
     });
     if (authError) setError(authError.message);
-    else { router.push('/dashboard'); router.refresh(); }
+    else { 
+      setSuccess('Registration successful! Please check your email to confirm your account.');
+    }
+    setLoading(false);
+  }
+
+  async function handleForgot(e: React.FormEvent) {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+    const exists = await checkUserExists(form.email);
+    if (!exists) {
+      setError('Email is not registered in our database.');
+      setLoading(false);
+      return;
+    }
+    const { error: authError } = await supabase.auth.resetPasswordForEmail(form.email, {
+      redirectTo: `${location.origin}/auth/callback?next=/update-password`,
+    });
+    if (authError) {
+      setError(authError.message);
+    } else {
+      setSuccess('Reset link sent! Please check your email to change your password.');
+    }
+    setLoading(false);
+  }
+
+  async function handleUpdate(e: React.FormEvent) {
+    e.preventDefault();
+    if (form.password !== form.confirm) {
+      setError('Passwords do not match.');
+      return;
+    }
+    setLoading(true);
+    setError('');
+    const { error: authError } = await supabase.auth.updateUser({ password: form.password });
+    if (authError) {
+      setError(authError.message);
+    } else {
+      await supabase.auth.signOut();
+      setSuccess('Password updated successfully! Sign in with your new password.');
+      setTimeout(() => router.push('/login'), 1800);
+    }
     setLoading(false);
   }
 
@@ -398,12 +450,44 @@ export default function AuthCard({ initialMode }: AuthCardProps) {
               Lablio
             </h1>
             <p style={{ fontSize: 13.5, color: '#6366f1', fontWeight: 500, letterSpacing: '0.02em' }}>
-              {page === 'signin' ? 'Your lab records, organized.' : 'Create your Lablio account'}
+              {page === 'signin' ? 'Your lab records, organized.' : 
+               page === 'signup' ? 'Create your Lablio account' : 
+               page === 'forgot' ? 'Reset your password' : 'Set a new password'}
             </p>
           </div>
 
-          {page === 'signin' ? (
+          {success ? (
+            <div style={{ textAlign: 'center', padding: '10px 0 20px' }}>
+              <div style={{ 
+                width: 64, height: 64, borderRadius: '50%', background: 'linear-gradient(135deg, #10b981, #059669)', 
+                color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px', 
+                fontSize: 32, boxShadow: '0 8px 24px rgba(16,185,129,0.3)' 
+              }}>✓</div>
+              <h2 style={{ fontSize: 24, fontWeight: 700, color: '#1e1b4b', marginBottom: 12 }}>
+                {page === 'update' ? 'Password updated!' : 'Check your email'}
+              </h2>
+              <p style={{ fontSize: 15, color: '#64748b', lineHeight: 1.6, marginBottom: 32 }}>
+                {success}
+              </p>
+              <button type="button" className="mainBtn" style={{...gradBtn, justifyContent: 'center', gap: 12}} onClick={() => switchPage('signin')}>
+                <span>{page === 'update' ? 'Sign in now' : 'Go to Sign in'}</span>
+                <span style={{ fontSize: 18 }}>→</span>
+              </button>
+            </div>
+          ) : page === 'signin' ? (
             <form onSubmit={handleSignIn}>
+              {confirmed && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', marginBottom: 20, background: 'rgba(16,185,129,0.12)', border: '1.5px solid rgba(16,185,129,0.3)', borderRadius: 12 }}>
+                  <span style={{ fontSize: 18 }}>✓</span>
+                  <p style={{ fontSize: 13, color: '#065f46', fontWeight: 500 }}>Email confirmed! Sign in with your password to continue.</p>
+                </div>
+              )}
+              {linkExpired && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', marginBottom: 20, background: 'rgba(220,38,38,0.08)', border: '1.5px solid rgba(220,38,38,0.25)', borderRadius: 12 }}>
+                  <span style={{ fontSize: 18 }}>⚠</span>
+                  <p style={{ fontSize: 13, color: '#991b1b', fontWeight: 500 }}>Confirmation link expired. Please register again.</p>
+                </div>
+              )}
               <button type="button" className="gBtn" style={googleBtn} onClick={handleGoogle} disabled={gLoading}>
                 {GOOGLE_ICON}
                 <span>{gLoading ? 'Redirecting...' : 'Sign in with Google'}</span>
@@ -433,11 +517,54 @@ export default function AuthCard({ initialMode }: AuthCardProps) {
               )}
 
               <div style={{ textAlign: 'right', marginTop: -8, marginBottom: 16 }}>
-                <span className="authLink" style={{ fontSize: 12 }}>Forgot password?</span>
+                <span className="authLink" style={{ fontSize: 12 }} onClick={() => switchPage('forgot')}>Forgot password?</span>
               </div>
 
               <button type="submit" className="mainBtn" style={gradBtn} disabled={loading}>
                 <span>{loading ? 'Signing in...' : 'Sign in'}</span>
+                <span style={{ fontSize: 18 }}>→</span>
+              </button>
+            </form>
+          ) : page === 'forgot' ? (
+            <form onSubmit={handleForgot}>
+              <InputField label="Email" icon={<MailIcon />} type="email" placeholder="you@college.edu" value={form.email} onChange={set('email')} />
+              {error && (
+                <p style={{ fontSize: 13, color: '#dc2626', marginBottom: 12, padding: '8px 12px', background: 'rgba(220,38,38,0.08)', borderRadius: 8 }}>
+                  {error}
+                </p>
+              )}
+              <button type="submit" className="mainBtn" style={gradBtn} disabled={loading}>
+                <span>{loading ? 'Sending...' : 'Send reset link'}</span>
+                <span style={{ fontSize: 18 }}>→</span>
+              </button>
+            </form>
+          ) : page === 'update' ? (
+            <form onSubmit={handleUpdate}>
+              <InputField
+                label="New Password"
+                icon={<LockIcon />}
+                type={showPass ? 'text' : 'password'}
+                placeholder="Enter new password"
+                value={form.password}
+                onChange={set('password')}
+                rightEl={<span onClick={() => setShowPass(p => !p)}><EyeIcon open={showPass} /></span>}
+              />
+              <InputField
+                label="Confirm New Password"
+                icon={<LockIcon />}
+                type={showConfirm ? 'text' : 'password'}
+                placeholder="Repeat new password"
+                value={form.confirm}
+                onChange={set('confirm')}
+                rightEl={<span onClick={() => setShowConfirm(p => !p)}><EyeIcon open={showConfirm} /></span>}
+              />
+              {error && (
+                <p style={{ fontSize: 13, color: '#dc2626', marginBottom: 12, padding: '8px 12px', background: 'rgba(220,38,38,0.08)', borderRadius: 8 }}>
+                  {error}
+                </p>
+              )}
+              <button type="submit" className="mainBtn" style={gradBtn} disabled={loading}>
+                <span>{loading ? 'Updating...' : 'Update password'}</span>
                 <span style={{ fontSize: 18 }}>→</span>
               </button>
             </form>
@@ -477,13 +604,17 @@ export default function AuthCard({ initialMode }: AuthCardProps) {
             </form>
           )}
 
+          {page !== 'update' && (
           <p style={{ textAlign: 'center', marginTop: 20, fontSize: 13.5, color: '#64748b' }}>
             {page === 'signin' ? (
               <>No account?{' '}<span className="authLink" onClick={() => switchPage('signup')}>Register</span></>
-            ) : (
+            ) : page === 'signup' ? (
               <>Already have an account?{' '}<span className="authLink" onClick={() => switchPage('signin')}>Sign in</span></>
+            ) : (
+              <><span className="authLink" onClick={() => switchPage('signin')}>Back to Sign in</span></>
             )}
           </p>
+          )}
         </div>
       </div>
     </>
